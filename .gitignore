@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+venv/
+.env
+.venv/
+data/raw/*.csv
+data/processed/*.csv
+logs/*.json
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!logs/.gitkeep
+.DS_Store
+.vscode/
+.idea/
