@@ -1,0 +1,83 @@
+# ============================================================
+# docker-compose.yml - ETL Pipeline + PostgreSQL
+# Spins up: PostgreSQL DB + ETL container
+# Usage: docker-compose up --build
+# ============================================================
+
+version: '3.9'
+
+services:
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: etl_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-etl_db}
+      POSTGRES_USER: ${POSTGRES_USER:-etl_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-etl_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/create_tables.sql:/docker-entrypoint-initdb.d/01_create_tables.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etl_user} -d ${POSTGRES_DB:-etl_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - etl_network
+
+  # ETL Pipeline Application
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: etl_pipeline
+    restart: on-failure
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-etl_db}
+      POSTGRES_USER: ${POSTGRES_USER:-etl_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-etl_password}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SCHEDULE_CRON: ${SCHEDULE_CRON:-0 6 * * *}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - etl_network
+    command: python -m src.pipeline
+
+  # pgAdmin - Database UI (optional, for development)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: etl_pgadmin
+    restart: unless-stopped
+    profiles:
+      - dev
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - etl_network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  etl_network:
+    driver: bridge
